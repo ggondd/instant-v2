@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>INSTANT, v2</title>
+    
+    <style>
+        /* --- DESIGN SYSTEM : LIQUID GLASS --- */
+        body { 
+            margin: 0; overflow: hidden; background: #000; 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+            color: white; user-select: none; -webkit-user-select: none;
+            touch-action: none; 
+        }
+        
+        canvas { display: block; outline: none; }
+        
+        a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.3); transition: all 0.2s; }
+        a:hover { border-bottom-color: white; }
+
+        /* --- UI LAYER --- */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+        }
+
+        /* --- POPUP SYSTEM --- */
+        #popup-overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+            z-index: 999; display: none; align-items: center; justify-content: center;
+            pointer-events: auto; opacity: 0; transition: opacity 0.3s;
+        }
+        #popup-overlay.active { display: flex; opacity: 1; }
+        
+        .popup-box {
+            background: rgba(20, 20, 20, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 30px; padding: 30px 40px;
+            text-align: center; min-width: 250px; max-width: 300px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #popup-overlay.active .popup-box { transform: scale(1); }
+        .popup-text { font-size: 16px; font-weight: 300; margin-bottom: 25px; line-height: 1.4; }
+        .popup-actions { display: flex; flex-direction: column; gap: 10px; }
+        .popup-btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);
+            color: white; padding: 12px 20px; border-radius: 20px; font-size: 12px;
+            text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: 0.2s;
+        }
+        .popup-btn:hover { background: rgba(255,255,255,0.25); }
+        .popup-btn.primary { background: #fff; color: #000; font-weight: 600; }
+        .popup-btn.primary:hover { background: #eee; transform: scale(1.02); }
+        .popup-btn.danger { color: #ff3b30; }
+
+        /* --- WEBCAM CLUSTER (TOP RIGHT) --- */
+        #camera-cluster {
+            position: absolute; top: 30px; right: 30px;
+            display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+            z-index: 100; pointer-events: none;
+        }
+        .cam-row {
+            display: flex; align-items: flex-start; gap: 10px; pointer-events: auto;
+        }
+
+        #live-preview-container {
+            width: 200px; height: 150px; border-radius: 20px; overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.15); background: #000;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative;
+        }
+        #live-preview { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        
+        #recording-overlay {
+            position: absolute; inset: 0; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.7); color: white; font-weight: 300; letter-spacing: 2px; font-size: 12px; z-index: 2;
+        }
+        .recording-dot { width: 8px; height: 8px; background: red; border-radius: 50%; margin-bottom: 10px; animation: pulse-red 1s infinite; }
+        @keyframes pulse-red { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        /* Bouton Flip Camera */
+        #btn-flip-cam {
+            width: 48px; height: 48px; border-radius: 14px;
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);
+            color: white; font-size: 11px; cursor: pointer;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; pointer-events: auto; flex-shrink: 0;
+        }
+        #btn-flip-cam:hover { background: rgba(255,255,255,0.3); transform: scale(1.05); }
+        #btn-flip-cam svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+
+        /* --- INSTANTS LIST --- */
+        #instants-container {
+            width: 200px; max-height: 140px; overflow-y: auto; pointer-events: auto;
+            display: flex; flex-direction: column; gap: 8px;
+            -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+            mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+            padding-bottom: 15px; 
+        }
+        #instants-container::-webkit-scrollbar { display: none; }
+        #instants-container { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .instant-btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 12px; padding: 10px; font-size: 10px; color: white; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; justify-content: space-between;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: 0.2s; flex-shrink: 0;
+        }
+        .instant-btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.4); }
+        .instant-icon { width: 6px; height: 6px; background: white; border-radius: 50%; box-shadow: 0 0 5px white; }
+
+        /* --- CAMERA PRESETS --- */
+        #cam-dock { position: absolute; top: 30px; left: 30px; display: flex; flex-direction: column; gap: 12px; pointer-events: auto; z-index: 101; }
+        .cam-btn { width: 48px; height: 48px; border-radius: 14px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); color: white; font-size: 11px; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; font-weight: 300; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.2s; }
+        .cam-btn:hover { background: rgba(255,255,255,0.3); transform: scale(1.05); }
+
+        /* --- CONTROLS WRAPPER --- */
+        #controls-wrapper { position: absolute; bottom: 85px; left: 50%; transform: translateX(-50%); pointer-events: none; z-index: 102; }
+
+        /* --- MAIN DOCK --- */
+        #glass-dock { display: flex; align-items: center; gap: 18px; padding: 14px 30px; background: rgba(20, 20, 20, 0.65); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 60px; pointer-events: auto; box-shadow: 0 25px 70px rgba(0,0,0,0.6); }
+
+        .dock-btn { background: rgba(255, 255, 255, 0.05); border: none; width: 56px; height: 56px; border-radius: 50%; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; }
+        .dock-btn:hover { background: rgba(255, 255, 255, 0.15); transform: scale(1.05); }
+        .dock-btn.active { background: rgba(255, 255, 255, 0.15); color: white; box-shadow: 0 0 30px rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); }
+        .dock-btn svg { fill: currentColor; width: 24px; height: 24px; transition: all 0.2s; }
+        #btn-import { font-size: 28px; font-weight: 200; }
+
+        /* --- SIDE BUTTONS --- */
+        #side-buttons { display: flex; align-items: center; gap: 10px; pointer-events: auto; }
+        .action-btn {
+            width: 56px; height: 56px; min-width: 56px; flex-shrink: 0; border-radius: 50%;
+            background: rgba(20, 20, 20, 0.65); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.1); color: rgba(255,255,255,0.9); font-size: 12px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; text-transform: uppercase; font-weight: 600; transition: 0.2s;
+            position: relative; 
+        }
+        .action-btn:hover { background: rgba(255,255,255,0.3); color: white; transform: scale(1.05); }
+
+        /* Animation Point Blanc Rec Canvas Fixée */
+        @keyframes pulse-white {
+            0% { transform: scale(1); box-shadow: 0 0 5px rgba(255,255,255,0.3); }
+            50% { transform: scale(1.4); box-shadow: 0 0 15px rgba(255,255,255,0.8); }
+            100% { transform: scale(1); box-shadow: 0 0 5px rgba(255,255,255,0.3); }
+        }
+        .canvas-recording { color: transparent !important; background: transparent !important; border-color: transparent !important; }
+        .canvas-recording::after {
+            content: ''; position: absolute;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: white; animation: pulse-white 2s infinite ease-in-out;
+        }
+
+        /* --- DEPTH SLIDER --- */
+        #depth-container { pointer-events: auto; background: rgba(20, 20, 20, 0.65); backdrop-filter: blur(30px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; padding: 0 25px; height: 50px; display: flex; align-items: center; gap: 15px; box-sizing: border-box; }
+        .depth-label { font-size: 10px; opacity: 0.7; letter-spacing: 1.5px; font-weight: 600; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; margin: 0; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 3px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #fff; margin-top: -7px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+
+        /* Record Layer Button */
+        #record-btn { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.15); display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; background: rgba(0,0,0,0.2); }
+        #record-inner { width: 50px; height: 50px; background: #ff3b30; border-radius: 50%; transition: all 0.3s cubic-bezier(0.3, 1.3, 0.3, 1); }
+        #record-btn.recording #record-inner { width: 24px; height: 24px; border-radius: 6px; }
+        #record-btn.recording { border-color: rgba(255,59,48,0.5); }
+
+        /* Speed Controls */
+        .speed-pill { display: flex; gap: 4px; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.1); }
+        .speed-btn { font-size: 10px; font-weight: bold; padding: 0 10px; height: 32px; border-radius: 16px; border: none; background: transparent; color: rgba(255,255,255,0.5); cursor: pointer; display: flex; align-items: center; }
+        .speed-btn.selected { background: rgba(255,255,255,0.9); color: #000; }
+        .divider { width: 1px; height: 30px; background: rgba(255,255,255,0.15); }
+
+        /* --- FOOTER --- */
+        #app-footer { 
+            position: absolute; bottom: 20px; left: 0; width: 100%; 
+            display: flex; justify-content: center; flex-wrap: wrap; gap: 5px 20px; 
+            font-size: 12px; color: rgba(255,255,255,0.85); pointer-events: auto; letter-spacing: 0.5px; 
+            text-align: center; padding: 0 20px; font-weight: 300; line-height: 1.1; z-index: 102; 
+        }
+
+        /* --- LAYOUTS --- */
+        @media (min-width: 769px) {
+            #controls-wrapper { display: flex; flex-direction: row; align-items: center; gap: 15px; }
+            #side-buttons { order: 1; }
+            #glass-dock { order: 2; }
+            #depth-container { order: 3; min-width: 180px; }
+            #btn-flip-cam { display: none !important; }
+        }
+
+        @media (max-width: 768px) {
+            #camera-cluster { top: 30px; right: 20px; } 
+            #cam-dock { top: 30px; left: 20px; }
+            #live-preview-container { width: 120px; height: 90px; } 
+            #instants-container { width: 120px; } 
+            
+            #controls-wrapper { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 12px; width: 94%; max-width: 400px; bottom: 80px; }
+            #depth-container { grid-row: 1; grid-column: 1; width: 100%; }
+            #side-buttons { grid-row: 1; grid-column: 2; }
+            #glass-dock { grid-row: 2; grid-column: 1 / span 2; justify-self: center; padding: 10px 15px; gap: 10px; width: 100%; box-sizing: border-box; justify-content: space-between; }
+            
+            .dock-btn, .action-btn { width: 44px; height: 44px; min-width: 44px;}
+            #record-btn { width: 54px; height: 54px; }
+            .speed-btn { padding: 0 5px; font-size: 8px; height: 28px; }
+            
+            /* --- FORCE 3 LIGNES SUR MOBILE POUR LE FOOTER --- */
+            #app-footer { 
+                font-size: 10px; 
+                bottom: 15px; 
+                flex-direction: column; 
+                align-items: center; 
+                gap: 5px; 
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="popup-overlay">
+        <div class="popup-box">
+            <div id="popup-msg" class="popup-text">Message</div>
+            <div id="popup-buttons" class="popup-actions"></div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        
+        <div id="camera-cluster">
+            <div class="cam-row">
+                <button id="btn-flip-cam" class="cam-btn" title="Flip Camera">
+                    <svg viewBox="0 0 24 24"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>
+                </button>
+                <div id="live-preview-container">
+                    <video id="live-preview" autoplay muted playsinline></video>
+                    <div id="recording-overlay">
+                        <div class="recording-dot"></div>
+                        RECORDING
+                    </div>
+                </div>
+            </div>
+            
+            <div id="instants-container">
+                </div>
+        </div>
+
+        <input type="file" id="import-input" accept="video/*" style="display:none">
+        
+        <div id="cam-dock">
+            <button class="cam-btn" onclick="setCamera('FACE')" title="Face View">Face</button>
+            <button class="cam-btn" onclick="setCamera('TOP')" title="Top View">Top</button>
+            <button class="cam-btn" onclick="setCamera('ISO')" title="Isometric View">Iso</button>
+        </div>
+
+        <div id="controls-wrapper">
+            <div id="side-buttons">
+                <button id="btn-export-rec" class="action-btn" title="Record Instant">Rec</button>
+                <button id="btn-clear" class="action-btn" title="Clear All">Clr</button>
+            </div>
+
+            <div id="glass-dock">
+                <button class="dock-btn" id="btn-import" title="Import">+</button>
+                <div id="record-btn" title="Record Layer (8s)"><div id="record-inner"></div></div>
+                <div class="divider"></div>
+
+                <button class="dock-btn" id="btn-play" title="Play/Pause">
+                    <svg viewBox="0 0 24 24" id="icon-play"><path d="M8 5v14l11-7z" transform="scale(0.85) translate(2,2)"/></svg>
+                </button>
+                
+                <div class="speed-pill">
+                    <button class="speed-btn selected" onclick="setSpeed(1)">1x</button>
+                    <button class="speed-btn" onclick="setSpeed(2)">2x</button>
+                    <button class="speed-btn" onclick="setSpeed(3)">3x</button>
+                    <button class="speed-btn" onclick="setSpeed(8)">8x</button>
+                    <button class="speed-btn" onclick="setSpeed(25)">25x</button>
+                </div>
+            </div>
+
+            <div id="depth-container">
+                <span class="depth-label">DEPTH</span>
+                <input type="range" id="global-depth" min="0" max="200" value="60">
+            </div>
+        </div>
+
+        <div id="app-footer">
+            <span>Developed by Darius Désir with the help of Gemini.</span>
+            <span>ig <a href="https://instagram.com/therealdariusdesir" target="_blank">@therealdariusdesir</a> &nbsp;&bull;&nbsp; more projects on <a href="https://dariusdesir.fr" target="_blank">dariusdesir.fr</a></span>
+            <span>contact : <a href="mailto:desirjuice@gmail.com">desirjuice@gmail.com</a></span>
+        </div>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const iconPlay = `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" transform="scale(0.8) translate(3,3)"/></svg>`;
+        const iconPause = `<svg viewBox="0 0 24 24"><rect x="8" y="5" width="2" height="14" rx="1" /><rect x="14" y="5" width="2" height="14" rx="1" /></svg>`;
+
+        const state = { 
+            layers: [], isRecordingCam: false, isRecordingCanvas: false, 
+            isPlaying: false, baseSpeed: 0.005, speedMultiplier: 1, 
+            globalDepth: 60.0, currentFacingMode: 'user',
+            instants: [] 
+        };
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.001);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 0, 180);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; controls.dampingFactor = 0.05; controls.rotateSpeed = 0.6; controls.enablePan = true;
+        const cylinderGroup = new THREE.Group();
+        scene.add(cylinderGroup);
+
+        // --- POPUP SYSTEM ---
+        const popupOverlay = document.getElementById('popup-overlay');
+        const popupMsg = document.getElementById('popup-msg');
+        const popupBtns = document.getElementById('popup-buttons');
+
+        function showPopup(message, buttonsData) {
+            popupMsg.innerText = message;
+            popupBtns.innerHTML = '';
+            buttonsData.forEach(data => {
+                const btn = document.createElement('button');
+                btn.className = `popup-btn ${data.primary ? 'primary' : ''} ${data.danger ? 'danger' : ''}`;
+                btn.innerText = data.text;
+                btn.onclick = () => { data.action(); popupOverlay.classList.remove('active'); };
+                popupBtns.appendChild(btn);
+            });
+            popupOverlay.classList.add('active');
+        }
+
+        // --- WEBCAM ---
+        const livePreview = document.getElementById('live-preview');
+        let stream = null;
+
+        async function initCamera() {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            try {
+                const constraints = { audio: false, video: { facingMode: state.currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } } };
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch(e) { 
+                try { stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); } 
+                catch(e2) { console.error("Camera failed."); }
+            }
+            if(stream) {
+                livePreview.srcObject = stream;
+                livePreview.play().catch(err => console.error(err));
+                livePreview.style.transform = state.currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+            }
+        }
+        initCamera();
+
+        document.getElementById('btn-flip-cam').addEventListener('click', () => {
+            state.currentFacingMode = state.currentFacingMode === 'user' ? 'environment' : 'user';
+            initCamera();
+        });
+
+        const importInput = document.getElementById('import-input');
+        document.getElementById('btn-import').addEventListener('click', () => importInput.click());
+        importInput.addEventListener('change', (e) => { if(e.target.files[0]) addLayer(URL.createObjectURL(e.target.files[0])); });
+
+        let camRecorder, camChunks = [];
+        document.getElementById('record-btn').addEventListener('click', () => { state.isRecordingCam ? stopCamRecord() : startCamRecord(); });
+        function startCamRecord() {
+            if(!stream) return; camChunks = []; 
+            const mimeType = MediaRecorder.isTypeSupported("video/webm; codecs=vp9") ? "video/webm; codecs=vp9" : "video/webm";
+            camRecorder = new MediaRecorder(stream, { mimeType });
+            camRecorder.ondataavailable = e => { if(e.data.size>0) camChunks.push(e.data); };
+            camRecorder.onstop = () => addLayer(URL.createObjectURL(new Blob(camChunks, {type:'video/webm'})));
+            camRecorder.start(); state.isRecordingCam = true; document.getElementById('record-btn').classList.add('recording');
+        }
+        function stopCamRecord() {
+            if(!state.isRecordingCam) return; camRecorder.stop(); state.isRecordingCam = false; document.getElementById('record-btn').classList.remove('recording');
+        }
+
+        // --- LAYER CLEAR ---
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            if(state.layers.length === 0) return;
+            showPopup("Are you sure you want to erase that instant?", [
+                { text: "Yes", danger: true, action: () => { state.layers = []; rebuildCylinder(); } },
+                { text: "Cancel", primary: true, action: () => {} }
+            ]);
+        });
+
+        // --- CANVAS HIGH RES EXPORT ---
+        const btnExportRec = document.getElementById('btn-export-rec');
+        const recordingOverlay = document.getElementById('recording-overlay');
+        const instantsContainer = document.getElementById('instants-container');
+        
+        let canvasRecorder, canvasChunks = [];
+        let exportExtension = 'webm'; 
+
+        btnExportRec.addEventListener('click', () => {
+            state.isRecordingCanvas ? stopCanvasRecord() : startCanvasRecord();
+        });
+
+        function startCanvasRecord() {
+            canvasChunks = [];
+            const canvasStream = renderer.domElement.captureStream(60);
+            
+            let options;
+            if (MediaRecorder.isTypeSupported('video/mp4')) {
+                options = { mimeType: 'video/mp4' };
+                exportExtension = 'mp4';
+            } else if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
+                options = { mimeType: 'video/webm; codecs=vp9' };
+                exportExtension = 'webm';
+            } else {
+                options = { mimeType: 'video/webm' };
+                exportExtension = 'webm';
+            }
+            
+            canvasRecorder = new MediaRecorder(canvasStream, options);
+            canvasRecorder.ondataavailable = e => { if(e.data.size > 0) canvasChunks.push(e.data); };
+            canvasRecorder.onstop = handleCanvasRecordStop;
+            
+            canvasRecorder.start();
+            state.isRecordingCanvas = true;
+            
+            btnExportRec.classList.add('canvas-recording');
+            livePreview.style.opacity = '0.3';
+            recordingOverlay.style.display = 'flex';
+        }
+
+        function stopCanvasRecord() {
+            if(!state.isRecordingCanvas) return;
+            canvasRecorder.stop();
+            state.isRecordingCanvas = false;
+            
+            btnExportRec.classList.remove('canvas-recording');
+            livePreview.style.opacity = '1';
+            recordingOverlay.style.display = 'none';
+        }
+
+        function handleCanvasRecordStop() {
+            const blob = new Blob(canvasChunks, {type: `video/${exportExtension}`});
+            const url = URL.createObjectURL(blob);
+            
+            const instant = {
+                id: Date.now(),
+                url: url,
+                name: `Instant ${String(state.instants.length + 1).padStart(2, '0')}`,
+                ext: exportExtension
+            };
+            
+            state.instants.unshift(instant);
+            renderInstantsList();
+        }
+
+        function renderInstantsList() {
+            instantsContainer.innerHTML = '';
+            state.instants.forEach(inst => {
+                const btn = document.createElement('div');
+                btn.className = 'instant-btn';
+                btn.innerHTML = `<span>${inst.name}</span><div class="instant-icon"></div>`;
+                
+                btn.onclick = () => {
+                    showPopup(`Manage ${inst.name}`, [
+                        { 
+                            text: "Download", primary: true, 
+                            action: () => {
+                                const a = document.createElement('a');
+                                a.href = inst.url;
+                                a.download = `${inst.name.replace(' ', '_')}.${inst.ext}`;
+                                a.click();
+                            } 
+                        },
+                        { 
+                            text: "Delete", danger: true, 
+                            action: () => {
+                                state.instants = state.instants.filter(i => i.id !== inst.id);
+                                URL.revokeObjectURL(inst.url); 
+                                renderInstantsList();
+                            } 
+                        },
+                        { text: "Cancel", action: () => {} }
+                    ]);
+                };
+                instantsContainer.appendChild(btn);
+            });
+        }
+
+        function addLayer(url) {
+            const vid = document.createElement('video'); vid.src = url; vid.loop = true; vid.muted = true; vid.play();
+            vid.playsInline = true; vid.crossOrigin = "anonymous";
+            const tex = new THREE.VideoTexture(vid); tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+            state.layers.push({ texture: tex, video: vid }); rebuildCylinder();
+        }
+
+        function rebuildCylinder() {
+            while(cylinderGroup.children.length > 0){ const c = cylinderGroup.children[0]; cylinderGroup.remove(c); if(c.geometry) c.geometry.dispose(); }
+            const count = state.layers.length; if(count === 0) return;
+            const segW = 80; const segH = 60;
+            let radius = (count * segW) / (2 * Math.PI); if(count===1) radius=100; if(count===2) radius=60;
+            const angPerSeg = count===1 ? Math.PI/3 : (Math.PI*2)/count;
+            state.layers.forEach((layer, i) => {
+                const geo = new THREE.CylinderGeometry(radius, radius, segH, 320, 240, true, i*angPerSeg, angPerSeg); geo.rotateY(Math.PI);
+                const mat = new THREE.ShaderMaterial({
+                    uniforms: { uTexture: { value: layer.texture }, uDepth: { value: state.globalDepth } },
+                    vertexShader: `
+                        uniform sampler2D uTexture; uniform float uDepth; varying vec2 vUv;
+                        void main() { vUv=uv; vec4 c=texture2D(uTexture,uv); float l=dot(c.rgb,vec3(0.299,0.587,0.114));
+                        vec3 p=position+normal*(l*uDepth); gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+                        gl_PointSize=2.5*(400.0/-gl_Position.z); }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D uTexture; varying vec2 vUv;
+                        void main() { vec4 c=texture2D(uTexture,vUv); gl_FragColor=vec4(c.rgb,1.0); }
+                    `,
+                    transparent: true, blending: THREE.NormalBlending, side: THREE.DoubleSide, depthWrite: true
+                });
+                cylinderGroup.add(new THREE.Points(geo, mat));
+            });
+        }
+
+        const btnPlay = document.getElementById('btn-play');
+        btnPlay.innerHTML = iconPlay;
+        btnPlay.addEventListener('click', () => {
+            state.isPlaying = !state.isPlaying;
+            if(state.isPlaying) { btnPlay.innerHTML = iconPause; btnPlay.classList.add('active'); }
+            else { btnPlay.innerHTML = iconPlay; btnPlay.classList.remove('active'); }
+        });
+
+        window.setSpeed = (l) => {
+            state.speedMultiplier = l;
+            document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('selected', b.innerText === l+"x"));
+        };
+        document.getElementById('global-depth').addEventListener('input', (e) => {
+            state.globalDepth = parseFloat(e.target.value);
+            cylinderGroup.children.forEach(m => m.material.uniforms.uDepth.value = state.globalDepth);
+        });
+        window.setCamera = (m) => {
+            controls.reset(); 
+            if(m==='FACE'){ camera.position.set(0,0,180); camera.lookAt(0,0,0); }
+            if(m==='TOP'){ camera.position.set(0,200,0); camera.lookAt(0,0,0); }
+            if(m==='ISO'){ camera.position.set(120,120,120); camera.lookAt(0,0,0); }
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (state.isPlaying) cylinderGroup.rotation.y += state.baseSpeed * state.speedMultiplier;
+            controls.update(); renderer.render(scene, camera);
+        }
+        animate();
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
